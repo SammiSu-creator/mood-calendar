@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>日历心情</title>
+<meta name="description" content="每天一张照片，一句话心情。数据只存在你的手机里。">
+<meta name="theme-color" content="#F7F4EC">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="日历心情">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="icon" type="image/png" href="./icons/icon-192.png">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<!-- 顶部导航 -->
+
+
+<!--
+  粘性头部：顶栏 + 统计条 + 月份条 合成一个整体，
+  整体 position:sticky，一次滚动三块全部钉住。
+  分开做三个 sticky 容易出现 z-index 和 1px 错位的问题。
+-->
+<div class="sticky-head">
+  <header class="topbar"><button class="topbar__btn" id="settings-btn" aria-label="设置">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 003.6 15a1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 008 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.14.35.4.64.74.83H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+    </svg>
+  </button>
+
+  <button class="year-pill" id="year-pill">
+    <span id="year-label">2026</span>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+      <path d="M6 9l6 6 6-6"/>
+    </svg>
+  </button>
+
+  <!-- 右上角留空：记录入口只有右下角 FAB 一个。
+       之前这里也有个 +，两个入口做的事完全一样，用户会困惑。 -->
+  <span class="topbar__spacer" aria-hidden="true"></span></header>
+
+  <div class="stats" id="stats"></div>
+  <nav class="monthbar" id="monthbar"></nav>
+</div>
+
+<!-- 主内容 -->
+<main class="main" id="main"></main>
+
+<!-- 底部视图切换 -->
+<div class="viewswitch" role="tablist">
+  <button data-view="day" aria-selected="true" aria-label="照片视图">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="3" y="3" width="7" height="7" rx="1.6"/>
+      <rect x="14" y="3" width="7" height="7" rx="1.6"/>
+      <rect x="3" y="14" width="7" height="7" rx="1.6"/>
+      <rect x="14" y="14" width="7" height="7" rx="1.6"/>
+    </svg>
+  </button>
+  <button data-view="month" aria-selected="false" aria-label="紧凑视图">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+      <rect x="3" y="4" width="18" height="17" rx="2.5"/>
+      <path d="M3 9.5h18M8 2.5v3M16 2.5v3" stroke-linecap="round"/>
+    </svg>
+  </button>
+</div>
+
+<!-- 悬浮记录按钮 -->
+<button class="fab" id="fab" aria-label="记录今天">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+    <path d="M12 5v14M5 12h14"/>
+  </svg>
+</button>
+
+<!-- 日详情页 -->
+<div class="detail" id="detail">
+  <div class="detail__bar">
+    <button class="topbar__btn" id="detail-close" aria-label="返回">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 18l-6-6 6-6"/>
+      </svg>
+    </button>
+    <div class="detail__date" id="detail-date"></div>
+    <div style="width:32px"></div>
+  </div>
+  <div class="detail__body" id="detail-body"></div>
+</div>
+
+<!-- 遮罩 -->
+<div class="overlay" id="overlay"></div>
+
+<!-- 底部抽屉 -->
+<div class="sheet" id="sheet" role="dialog" aria-modal="true">
+  <div class="sheet__grabber"></div>
+  <div class="sheet__head">
+    <div class="sheet__title" id="sheet-title"></div>
+    <button class="topbar__btn" id="sheet-close" aria-label="关闭">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <path d="M18 6L6 18M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+  <div class="sheet__body" id="sheet-body"></div>
+  <div class="sheet__foot" id="sheet-foot"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>
