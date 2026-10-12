@@ -1,0 +1,777 @@
+/* ============================================================
+   日历心情 · C 版 —— 手账拼贴风（重融合）
+   特征：纸张纹理 + 拍立得照片 + 手撕便签 + 胶带 + 宝石装饰
+   ============================================================ */
+
+:root {
+  /* 纸色系：从暖白到米黄，模拟真实纸张 */
+  --paper:      #F7F4EC;
+  --paper-deep: #EFEAE0;
+  --dot:        #C9C2B4;
+  --ink:        #2A2520;
+  --ink-soft:   #6E675C;
+  --ink-faint:  #A69E90;
+
+  /* 粉彩贴纸 */
+  --pink:   #F6C9E1;
+  --pink-d: #E87EB4;
+  --blue:   #CDE6FC;
+  --blue-d: #6FA8DC;
+  --olive:  #D1D495;
+  --yellow: #FAECAA;
+  --yellow-d:#E0C356;
+  --lilac:  #DCCBF0;
+  --mint:   #BFE3D4;
+  --peach:  #FFD9C2;
+
+  --accent: #E87EB4;
+  --surface-solid: #FDFBF6;
+  --hairline: rgba(42, 37, 32, 0.1);
+
+  --radius-sheet: 20px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  --shadow-soft: 0 1px 4px rgba(80, 65, 50, 0.12);
+  --shadow-card: 0 3px 12px rgba(80, 65, 50, 0.15);
+  --shadow-paper: 3px 5px 14px rgba(80, 65, 50, 0.2);
+  --shadow-sheet: 0 -10px 44px rgba(60, 50, 40, 0.28);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  --font-serif: 'Songti SC', 'Noto Serif CJK SC', 'Source Han Serif SC', Georgia, serif;
+  --font-round: 'PingFang SC', -apple-system, 'Hiragino Maru Gothic ProN', sans-serif;
+  /*
+   * 正文统一字体栈 —— 跨设备一致是首要目标。
+   *
+   * 曾经踩过两个坑：
+   *  1. 原来用 'Bradley Hand', 'Chalkboard SE', 'Comic Sans MS', …, cursive，
+   *     这些全是纯西文字体、一个中文字形都没有，中文会逐字回退到 PingFang SC
+   *     → 同一段话里「中文黑体 + 西文花体」两种观感。
+   *  2. 后来补 font-style:italic 想模拟手写，结果中文系统字体没有真斜体、
+   *     浏览器合成倾斜后 caret（打字光标）仍按原字形盒定位，
+   *     那条线就跟字错位，有时偏上有时偏下。
+   *
+   * 现在的取舍：字体栈只放各端都有的系统黑体，风格上不追求花体，
+   * 手账感交给便签纸 / 拍立得 / 胶带 / 点阵底纹这些视觉元素承载。
+   * 保证 iPhone、安卓、平板上看到的排版完全一致，比"像手写"更要紧。
+   */
+  --font-hand: 'PingFang SC', -apple-system, 'Hiragino Sans GB',
+               'Helvetica Neue', 'Microsoft YaHei', 'Noto Sans CJK SC',
+               'Source Han Sans SC', 'WenQuanYi Micro Hei', sans-serif;
+
+  /*
+   * 手写感的三项微调。
+   *
+   * font-style 必须是 normal：中文系统字体没有真斜体，
+   * font-style:italic 会让浏览器「合成倾斜」，
+   * 但光标(caret)的垂直定位仍按原始字形盒算 —— 结果那条打字线
+   * 会跟字错位，表现为有时偏上、有时偏下，跟字不在同一行。
+   * 横跨 iPhone / 安卓 / 桌面时错位程度还不一样。
+   *
+   * 保留字距与墨色，手账感靠便签纸、拍立得、胶带这些元素承载，不依赖字体倾斜。
+   */
+  --hand-style: normal;
+  --hand-spacing: 0.02em;  /* 稍微松一点的字距 */
+  --hand-color: #3A322B;   /* 比纯黑柔和一点，像墨水 */
+
+  /*
+   * 输入框正文行高。
+   * line-height:normal 在中文字体下由浏览器猜，不同设备结果不同
+   * （有的 1.4、有的 1.6），会导致同一段文字在不同手机上高低不一。
+   * 固定成绝对值才能跨设备一致。
+   */
+  --hand-line: 1.75;
+}
+
+/*
+ * 手写质感：只改样式不改字体，避免依赖系统花体导致输入/显示不一致。
+ * 斜体在多数中文系统字体下是「伪斜体」（倾斜渲染），观感自然且跨平台一致。
+ */
+.hand {
+  font-family: var(--font-hand);
+  font-style: var(--hand-style);
+  letter-spacing: var(--hand-spacing);
+  color: var(--hand-color);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/*
+ * 注意：这里绝不能写 height: 100%。
+ * 之前 html, body 都设了 height:100%，body 高度被锁死成一屏，
+ * position:sticky 的粘附范围随之被限制在这个盒子里——
+ * 一旦滚出这一屏，顶栏和月份条的 sticky 就全部失效，会被一起滚走。
+ * 正确做法是让高度由内容撑开（height:auto），
+ * 底图靠 background-attachment:fixed 保持不动。
+ */
+html { height: 100%; }
+body { margin: 0; padding: 0; min-height: 100%; overscroll-behavior-y: none; }
+
+body {
+  font-family: var(--font-sans);
+  color: var(--ink);
+  /* 纸张：点阵 + 细微横纹，模拟 notebook */
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(var(--dot) 1px, transparent 1px),
+    repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(160,150,135,.06) 27px, rgba(160,150,135,.06) 28px);
+  background-size: 16px 16px, 100% 28px;
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  user-select: none; -webkit-user-select: none;
+}
+
+button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+input, textarea { font-family: inherit; color: inherit; -webkit-user-select: text; user-select: text; }
+
+/* ============ 顶部导航 ============ */
+
+/* 顶栏不再单独 sticky，统一交给 .sticky-head 承担，
+   否则两个 sticky 元素会在交界处出现 1px 错位。 */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(var(--safe-top) + 10px) 18px 10px;
+  background: rgba(247, 244, 236, 0.97);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* 三合一的粘性头部：顶栏 + 统计条 + 月份条 */
+.sticky-head {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(247, 244, 236, .97);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  box-shadow: 0 1px 0 rgba(42, 37, 32, .07);
+}
+
+.topbar__btn {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: 8px; color: var(--ink); transition: background .15s, transform .12s;
+}
+.topbar__btn:active { background: rgba(232,126,180,.2); transform: scale(.9); }
+
+/* 年份：胶带贴纸 */
+.year-pill {
+  display: flex; align-items: center; gap: 5px;
+  height: 36px; padding: 0 16px;
+  background: var(--pink);
+  box-shadow: var(--shadow-soft);
+  transform: rotate(-1.2deg);
+  font-family: var(--font-serif); font-size: 19px; font-weight: 700;
+  /* 胶带造型：两侧收窄 */
+  clip-path: polygon(4% 0%, 96% 2%, 100% 50%, 96% 98%, 4% 100%, 0 50%);
+  transition: transform .12s;
+}
+.year-pill:active { transform: rotate(-1.2deg) scale(.94); }
+.year-pill svg { opacity: .5; transform: rotate(1.2deg); }
+
+/* 右上角占位，保证年份胶囊在导航栏正中 */
+.topbar__spacer {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+/* 统计：手撕便签条 */
+.stats {
+  display: flex; justify-content: center; gap: 10px;
+  padding: 2px 18px 10px;
+}
+
+.tape {
+  padding: 4px 12px;
+  box-shadow: var(--shadow-soft);
+  font-family: var(--font-hand);
+  font-size: 12px; line-height: 1.5;
+  white-space: nowrap;
+}
+.tape--pink  { background: var(--pink);  transform: rotate(-2.5deg); }
+.tape--blue  { background: var(--blue);  transform: rotate(1.8deg); }
+.tape--olive { background: var(--olive); transform: rotate(-1.2deg); }
+.tape b { font-family: var(--font-serif); font-weight: 700; font-size: 15px; }
+
+/* ============ 月份条 ============ */
+
+.monthbar {
+  display: flex; gap: 6px;
+  padding: 8px 16px 10px;
+  overflow-x: auto; scrollbar-width: none;
+  /* 月份条是横向滚动容器，必须锁住纵向，
+     否则手指在它上面上下滑会连带整页滚动。 */
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+}
+.monthbar::-webkit-scrollbar { display: none; }
+
+.monthbar__item {
+  flex: 0 0 auto; padding: 6px 13px;
+  font-family: var(--font-round); font-size: 14px; font-weight: 700;
+  color: var(--ink-soft); white-space: nowrap;
+  transition: transform .14s, background .15s, color .15s;
+}
+.monthbar__item--muted { color: var(--ink-faint); font-weight: 500; }
+.monthbar__item--active {
+  background: var(--ink); color: var(--paper);
+  transform: rotate(-1.5deg) scale(1.06);
+  box-shadow: var(--shadow-soft);
+  border-radius: 4px;
+}
+.monthbar__item:active { background: var(--pink); color: var(--ink); }
+
+/* ============ 主体 ============ */
+
+.main { padding: 6px 16px calc(var(--safe-bottom) + 110px); }
+.section { margin-top: 26px; }
+
+.section__head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 2px 14px;
+}
+
+.section__title {
+  font-family: var(--font-serif);
+  font-size: 30px; font-weight: 700;
+  letter-spacing: .5px; line-height: 1;
+  color: var(--ink);
+  text-shadow: 1.5px 1.5px 0 rgba(232,126,180,.28); /* 手绘描边感 */
+}
+
+.section__count {
+  font-family: var(--font-hand); font-size: 12px;
+  padding: 3px 9px; background: var(--yellow);
+  transform: rotate(2.5deg); box-shadow: var(--shadow-soft);
+}
+
+.weekdays { display: grid; grid-template-columns: repeat(7, 1fr); padding: 0 2px 10px; }
+.weekdays span {
+  text-align: center; font-family: var(--font-hand);
+  font-size: 12px; font-weight: 700; color: var(--ink-faint);
+}
+
+/* ============ 日历网格：拍立得照片 ============ */
+
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 11px 8px; padding: 0 2px; }
+
+.cell-wrap { position: relative; width: 100%; padding-bottom: 118%; height: 0; }
+.cell-wrap > .cell { position: absolute; inset: 0; }
+
+/* 拍立得：白边 + 照片 + 底部留白 */
+.cell {
+  position: relative; width: 100%; padding: 0; border: none;
+  appearance: none; -webkit-appearance: none;
+  aspect-ratio: 1/1.18;
+  border-radius: 2px;
+  background: #FFF;
+  overflow: visible;
+  box-shadow: var(--shadow-paper);
+  transition: transform .16s;
+}
+.cell:active { transform: scale(.9) rotate(-2deg); }
+
+/* 照片区：白边留出拍立得质感 */
+.cell--filled { background: #FFF; padding: 5px 5px 16px; }
+.cell__photo {
+  width: 100%; height: 100%;
+  border-radius: 1px; overflow: hidden;
+  background: rgba(0,0,0,.03);
+}
+.cell--filled img {
+  width: 100%; height: 100%; object-fit: cover;
+  display: block; border-radius: 1px;
+}
+
+.cell--empty {
+  background: transparent; box-shadow: none;
+  border: 1.5px dashed rgba(120,112,100,.28);
+  border-radius: 3px;
+  display: grid; place-items: center;
+}
+.cell--empty .num { font-family: var(--font-hand); font-size: 14px; font-weight: 600; color: var(--ink-faint); }
+
+/* 拍立得底部的手写日期 */
+.cell--filled .num {
+  position: absolute; bottom: 1.5px; left: 0; right: 0;
+  text-align: center;
+  font-family: var(--font-hand);
+  font-size: 11px; font-weight: 700; line-height: 1;
+  color: var(--ink-soft);
+}
+
+/* 心情色点：胶带小方块，贴在照片角 */
+.cell__dot {
+  position: absolute; top: -4px; right: -4px; z-index: 3;
+  width: 10px; height: 10px; border-radius: 2px;
+  transform: rotate(8deg);
+  box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 0 0 1.5px rgba(255,255,255,.9);
+}
+
+/* 纯文字日：便利贴 */
+.cell--text {
+  border: none; border-radius: 2px;
+  background: var(--peach);
+  box-shadow: var(--shadow-soft);
+  display: grid; place-items: center;
+  padding: 4px 2px;
+}
+.cell--text .emoji { font-size: 18px; }
+
+/* 今天：红色手绘圈 */
+.cell-wrap > .cell--today {
+  outline: 2px solid var(--pink-d);
+  outline-offset: 1.5px;
+}
+.cell-wrap > .cell--today .num { color: var(--pink-d); }
+
+/* ============ 底部切换 ============ */
+
+.viewswitch {
+  position: fixed; left: 50%; bottom: calc(var(--safe-bottom) + 22px); z-index: 45;
+  transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 5px;
+  background: #FFFDF8;
+  box-shadow: var(--shadow-card);
+  border-radius: 6px;
+}
+.viewswitch button {
+  display: grid; place-items: center;
+  width: 42px; height: 34px; border-radius: 4px;
+  color: var(--ink-faint);
+}
+.viewswitch button[aria-selected='true'] { background: var(--yellow); color: var(--ink); }
+
+/* ============ FAB：胶带 + 图钉感 ============ */
+
+.fab {
+  position: fixed; right: 20px; bottom: calc(var(--safe-bottom) + 22px); z-index: 46;
+  width: 56px; height: 56px; display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--pink-d); color: #fff;
+  box-shadow: 0 4px 0 rgba(180,90,140,.5), var(--shadow-card);
+  transition: transform .14s;
+}
+.fab:active { transform: scale(.88) translateY(2px); box-shadow: 0 2px 0 rgba(180,90,140,.5); }
+
+/* ============ 空状态：手账封面 ============ */
+
+.empty-state { position: relative; padding: 90px 30px; text-align: center; }
+.empty-state__deco { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.empty-state__emoji { font-size: 50px; margin-bottom: 16px; filter: drop-shadow(2px 3px 1px rgba(0,0,0,.12)); }
+.empty-state h3 {
+  margin: 0 0 10px; font-family: var(--font-serif);
+  font-size: 24px; font-weight: 700;
+  text-shadow: 1.5px 1.5px 0 var(--pink);
+}
+.empty-state p { margin: 0; font-size: 14px; line-height: 1.8; color: var(--ink-soft); }
+
+.deco { position: absolute; left: var(--x); top: var(--y); width: var(--s); height: var(--s); transform: rotate(var(--r)); filter: drop-shadow(1px 2px 2px rgba(0,0,0,.15)); }
+.deco--star {
+  background: linear-gradient(135deg, #FAECAA, #E0C356 50%, #B8912A);
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+.deco--heart {
+  background: linear-gradient(135deg, #FBD9E8, #E87EB4);
+  clip-path: polygon(50% 100%, 8% 52%, 4% 30%, 18% 8%, 38% 8%, 50% 24%, 62% 8%, 82% 8%, 96% 30%, 92% 52%);
+}
+.deco--butterfly {
+  background: linear-gradient(135deg, #D6F0E4, #4FA98A);
+  clip-path: polygon(50% 45%, 30% 15%, 8% 28%, 18% 50%, 5% 62%, 32% 62%, 50% 78%, 68% 62%, 95% 62%, 82% 50%, 92% 28%, 70% 15%);
+}
+.deco--flower {
+  background: linear-gradient(135deg, #E8DFF5, #8E77C0);
+  border-radius: 50%; box-shadow: 0 0 0 3px #fff, 0 0 0 4.5px rgba(185,163,220,.5);
+}
+
+/* ============ 遮罩 + 抽屉（便签纸） ============ */
+
+.overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(50, 42, 34, .45);
+  opacity: 0; pointer-events: none; transition: opacity .28s;
+}
+.overlay--show { opacity: 1; pointer-events: auto; }
+
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 101;
+  /* dvh 跟随实际可见高度；原来的 vh 在移动端等于「大视口」，
+     地址栏展开时抽屉可能超出屏幕，把标题和关闭按钮顶出去 */
+  max-height: 90dvh;
+  /* 年份选择/设置这类面板没有底栏（.sheet__foot 被隐藏），
+     只靠 foot 的安全区内边距不够，最后一行会被 Home 指示条压住 */
+  padding-bottom: var(--safe-bottom);
+  display: flex; flex-direction: column;
+  background: var(--surface-solid);
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  box-shadow: var(--shadow-sheet);
+  transform: translateY(100%);
+  transition: transform .34s cubic-bezier(.32,.72,0,1);
+}
+.sheet--show { transform: translateY(0); }
+
+.sheet__grabber { width: 40px; height: 4px; margin: 10px auto 0; border-radius: 2px; background: rgba(42,37,32,.2); flex: 0 0 auto; }
+.sheet__head { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px 12px; flex: 0 0 auto; }
+.sheet__title { font-family: var(--font-serif); font-size: 21px; font-weight: 700; }
+.sheet__body { padding: 0 20px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.sheet__foot { display: flex; gap: 10px; padding: 14px 20px calc(var(--safe-bottom) + 16px); border-top: 1.5px dashed var(--hairline); flex: 0 0 auto; }
+
+/* ============ 按钮：手作纸片 ============ */
+
+.btn {
+  flex: 1; height: 50px; display: grid; place-items: center;
+  border-radius: 4px;
+  font-family: var(--font-round); font-size: 16px; font-weight: 700;
+  background: var(--blue); color: var(--ink);
+  box-shadow: 2px 3px 0 rgba(42,37,32,.14);
+  transition: transform .12s, box-shadow .12s;
+}
+.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(42,37,32,.14); }
+.btn--primary { background: var(--pink); }
+.btn--danger { background: #FFCFC4; color: #A93424; }
+.btn[disabled] { opacity: .4; pointer-events: none; }
+
+/* ============ 年份列表 ============ */
+
+.yearlist { display: flex; flex-direction: column; }
+.yearlist__item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 15px 8px; border-bottom: 1.5px dashed var(--hairline);
+  font-family: var(--font-serif); font-size: 19px;
+}
+.yearlist__item:last-child { border-bottom: none; }
+.yearlist__item[aria-selected='true'] {
+  background: var(--yellow); margin: 0 -12px; padding-left: 20px; padding-right: 20px;
+  transform: rotate(-.5deg); box-shadow: var(--shadow-soft);
+}
+.yearlist__meta { font-family: var(--font-hand); font-size: 13px; color: var(--ink-faint); }
+
+/* ============ 日详情：拍立得 + 便签 ============ */
+
+.detail {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; flex-direction: column;
+  background: var(--paper);
+  transform: translateY(100%);
+  transition: transform .36s cubic-bezier(.32,.72,0,1);
+  visibility: hidden;
+}
+.detail--show { transform: translateY(0); visibility: visible; }
+
+.detail__bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(var(--safe-top) + 10px) 16px 10px;
+  border-bottom: 1.5px solid var(--paper-deep); flex: 0 0 auto;
+  background: rgba(247,244,236,.92); backdrop-filter: blur(8px);
+}
+.detail__date { font-family: var(--font-serif); font-size: 19px; font-weight: 700; }
+.detail__body {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  /* 必须锁住：详情页内部滚到边界后继续滑，会沿滚动链带动背后的整本日历一起滚，
+     关闭详情页后落点完全不是你刚才看的那天。
+     抽屉 .sheet__body 早就有同样的保护，这里是同一功能的另一个实现。 */
+  overscroll-behavior: contain;
+  padding: 0 20px calc(var(--safe-bottom) + 26px);
+}
+
+/* 大拍立得：旋转一点 */
+.detail__photo {
+  width: 88%; aspect-ratio: 4/5; object-fit: cover;
+  margin: 26px auto 8px;
+  background: #FFF; padding: 10px 10px 38px;
+  border-radius: 2px;
+  box-shadow: var(--shadow-paper);
+  transform: rotate(-1.2deg);
+}
+
+.detail__mood { display: flex; align-items: center; gap: 9px; margin: 20px 0 12px; }
+.detail__mood-emoji { font-size: 28px; }
+.detail__mood-label {
+  font-family: var(--font-hand); font-size: 14px; font-weight: 700;
+  padding: 4px 12px; background: var(--blue);
+  transform: rotate(1.5deg); box-shadow: var(--shadow-soft);
+}
+
+.detail__text {
+  /* 与输入框共用同一组变量（字体/字距/颜色/行高），保证输入与显示完全一致 */
+  font-family: var(--font-hand); font-size: 17px;
+  line-height: var(--hand-line);
+  font-style: var(--hand-style);
+  letter-spacing: var(--hand-spacing);
+  color: var(--hand-color);
+  white-space: pre-wrap; word-break: break-word;
+  /* 手写便签：淡黄底 + 微微倾斜 */
+  background: var(--yellow);
+  padding: 16px 18px; border-radius: 3px;
+  transform: rotate(-.4deg);
+  box-shadow: var(--shadow-soft);
+  margin: 0;
+}
+
+.detail__meta {
+  margin-top: 26px; padding-top: 16px;
+  border-top: 1.5px dashed var(--hairline);
+  font-family: var(--font-hand); font-size: 13px; color: var(--ink-faint);
+}
+.detail__actions { display: flex; gap: 10px; margin-top: 16px; }
+.detail__nav { display: flex; gap: 10px; margin-top: 26px; }
+.detail__nav button {
+  flex: 1; height: 44px; border-radius: 4px;
+  background: var(--paper-deep);
+  font-family: var(--font-hand); font-size: 15px; font-weight: 700;
+  box-shadow: 1.5px 2px 0 rgba(42,37,32,.12);
+}
+.detail__nav button[disabled] { opacity: .3; }
+
+/* ============ 记录表单 ============ */
+
+.datebar {
+  display: flex; align-items: center; gap: 2px;
+  flex: 1.1; height: 50px; padding: 0 4px;
+  background: var(--olive); border-radius: 4px;
+  box-shadow: 2px 3px 0 rgba(42,37,32,.12);
+}
+.datebar input {
+  flex: 1; min-width: 0; height: 100%; border: none; background: transparent;
+  font-family: var(--font-round); font-size: 14px; font-weight: 700;
+  text-align: center; outline: none;
+}
+.datebar__arrow { width: 26px; height: 40px; border-radius: 3px; font-size: 20px; line-height: 1; color: var(--ink-soft); flex: 0 0 auto; }
+.datebar__arrow:active { background: rgba(42,37,32,.08); }
+
+.photopick {
+  position: relative; width: 100%;
+  /* grid-template-rows:minmax(0,1fr) 让这一行可收缩，
+     否则图片会把容器顶开（配合下面的 max-height 一起用） */
+  grid-template-rows: minmax(0, 1fr);
+  /* 没有 aspect-ratio —— 固定 4/3 时，横图放进竖框（contain）会留大片空白。
+     让容器高度跟着图片走，显示完整且不浪费空间。 */
+  min-height: 160px;
+  border-radius: 3px; overflow: hidden;
+  background: var(--paper-deep);
+  display: grid; place-items: center;
+  margin-bottom: 18px;
+  border: 2px dashed rgba(120,112,100,.3);
+}
+
+/* 已有照片：去掉虚线（虚线是"还没上传"的信号），改成实线细边 */
+.photopick--filled {
+  border-style: solid;
+  border-color: rgba(120,112,100,.22);
+  min-height: 0;
+  /* 竖图很高，不加限制会把底部的日期栏和保存按钮挤出屏幕。
+     给一个上限，超出部分 contain 留边。 */
+  max-height: 42vh;
+}
+/* 预览要「看得全」而不是「填满」：
+   cover 会裁掉画面边缘（人像可能被切掉头），contain 保留完整画面并留白。
+   contain 需要实色背景（不能用透明，否则和 dashed 边框叠在一起很脏）。 */
+/*
+ * 图片必须服从容器尺寸，不能反过来撑破容器。
+ *
+ * 之前的写法是 width:100%;height:100% + 容器 max-height:42vh，
+ * 但在 grid 布局里 img 的 height:100% 是按内容高度算的，
+ * 竖图会直接撑破容器露出去（实测图片 615px > 容器 354px）。
+ *
+ * 正确做法：用 min(0,1fr) 让 grid 行可收缩，
+ * 再让 img 用 max-height:100% 明确"不超过容器"。
+ */
+.photopick img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  background: var(--paper-deep);
+  display: block;
+}
+.photopick__hint {
+  /* 必须压在 <img> 之上 —— img 在 DOM 里排前面，
+     不给 z-index 的话提示会被照片完全盖住看不见。 */
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; color: var(--ink-soft); font-family: var(--font-hand); font-size: 15px;
+}
+
+/*
+ * 已有照片时，提示语不该压在画面正中间挡住内容。
+ * 移到右下角做成一个小胶囊，像贴在照片角上的备注条。
+ */
+.photopick--filled .photopick__hint {
+  inset: auto 8px 8px auto;
+  flex-direction: row;
+  padding: 3px 9px;
+  border-radius: 4px;
+  background: rgba(255, 253, 251, .88);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .14);
+  pointer-events: none; /* 不挡点击换图 */
+}
+.photopick--filled .photopick__hint svg { display: none; }
+.photopick__hint svg { opacity: .45; }
+
+.field { margin-bottom: 18px; }
+.field__label { display: block; margin-bottom: 8px; font-family: var(--font-hand); font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+.field textarea, .field input {
+  width: 100%; padding: 13px 15px;
+  border: none; border-radius: 3px;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1.5px rgba(120,112,100,.2);
+  /* 输入框和详情页必须用完全一致的字体栈，否则会出现
+     「输入是花体、显示是正体」的割裂感 */
+  font-family: var(--font-hand); font-size: 17px;
+  font-style: var(--hand-style);
+  letter-spacing: var(--hand-spacing);
+  color: var(--hand-color);
+  /* 固定行高：line-height:normal 在不同设备对中文字体给出的结果不一致，
+     会让光标行高与视觉行高对不上。绝对值才能跨设备对齐。 */
+  line-height: var(--hand-line);
+  outline: none; resize: none;
+}
+.field textarea:focus, .field input:focus { box-shadow: inset 0 0 0 2px var(--pink-d); }
+
+/*
+ * iOS 输入法自带的"手写体"会在聚焦时接管字体渲染，
+ * 导致输入框里是花体、松手显示是正体。
+ * 强制声明主题字体 + 允许浏览器覆盖输入法默认字体。
+ */
+.field textarea,
+.field input,
+.field input[type='date'] {
+  font-family: var(--font-hand) !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.field__counter { margin-top: 5px; font-family: var(--font-hand); font-size: 12px; color: var(--ink-faint); text-align: right; }
+
+/* 心情：手撕纸片 */
+.moods { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
+.mood {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 1px; border-radius: 3px;
+  border: 2px solid transparent;
+  background: var(--paper-deep);
+  transition: transform .12s, border-color .15s;
+}
+.mood:active { transform: scale(.92) rotate(2deg); }
+.mood[aria-pressed='true'] { border-color: var(--ink); background: var(--pink); transform: rotate(-2deg); }
+.mood__emoji { font-size: 19px; }
+.mood__label { font-size: 9.5px; color: var(--ink-soft); white-space: nowrap; font-family: var(--font-hand); }
+.mood[aria-pressed='true'] .mood__label { color: var(--ink); font-weight: 700; }
+
+.settings__item {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 16px 8px;
+  border-bottom: 1.5px dashed var(--hairline);
+  font-family: var(--font-round); font-size: 16px; text-align: left;
+}
+.settings__item:last-child { border-bottom: none; }
+.settings__item--danger { color: #A93424; }
+.settings__item span:last-child { color: var(--ink-faint); font-size: 14px; }
+
+/* ============ Toast：手写便条 ============ */
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(var(--safe-bottom) + 96px); z-index: 200;
+  transform: translate(-50%, 12px) rotate(-1deg);
+  padding: 11px 22px; border-radius: 3px;
+  background: var(--ink); color: var(--paper);
+  font-family: var(--font-hand); font-size: 15px;
+  opacity: 0; pointer-events: none;
+  transition: opacity .24s, transform .24s;
+  box-shadow: 3px 4px 0 rgba(42,37,32,.3);
+}
+.toast--show { opacity: 1; transform: translate(-50%, 0) rotate(-1deg); }
+
+.spinner {
+  width: 22px; height: 22px;
+  border: 2.5px solid rgba(42,37,32,.15); border-top-color: var(--ink);
+  border-radius: 50%; animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============ 紧凑视图（第二个按钮切换） ============
+   日视图：大拍立得，能看清照片
+   紧凑视图：小方块密排，一屏能扫完一整年
+   ============================================ */
+
+body.compact .grid { gap: 4px 3px; }
+
+/* 紧凑视图：改用固定像素高度，不跟格子宽度联动，
+   否则 padding-bottom:100% 会让高度跟着宽度走，缩小不明显 */
+body.compact .cell-wrap {
+  padding-bottom: 0;
+  height: 38px; /* 一行的固定高度 */
+}
+body.compact .cell {
+  position: absolute; inset: 0;
+  height: 38px;
+  aspect-ratio: auto;
+}
+
+/* 紧凑视图：整月塞进一屏，靠缩小间距 + 去掉拍立得白边 + 日期压在照片上 */
+body.compact .section { margin-top: 16px; }
+body.compact .section__title { font-size: 20px; }
+body.compact .section__head { padding: 2px 2px 8px; }
+body.compact .section__count { font-size: 10px; padding: 2px 6px; }
+body.compact .weekdays { padding-bottom: 6px; }
+body.compact .weekdays span { font-size: 9.5px; }
+
+body.compact .cell {
+  border-radius: 2px;
+  box-shadow: none;
+}
+body.compact .cell:active { transform: scale(.9); }
+
+/* 紧凑视图：照片铺满，没有白边 */
+body.compact .cell--filled { padding: 0; background: transparent; }
+body.compact .cell--filled .cell__photo { border-radius: 2px; }
+
+/* 紧凑视图：日期压在照片上（照片太小放不下留白） */
+body.compact .cell--filled .num {
+  position: absolute; bottom: 2px; left: 3px; right: auto;
+  text-align: left;
+  font-size: 9.5px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .65);
+}
+
+/* 紧凑视图：心情点缩小 */
+body.compact .cell__dot { width: 6px; height: 6px; top: 2px; right: 2px; box-shadow: 0 0 0 1px rgba(255,255,255,.9); }
+
+/* 紧凑视图：文字日也压小 */
+body.compact .cell--text { padding: 0; }
+body.compact .cell--text .emoji { font-size: 13px; }
+
+/* 紧凑视图：空格子描边更淡，免得密集时太吵 */
+body.compact .cell--empty { border-width: 1px; border-color: rgba(120,112,100,.2); }
+body.compact .cell--empty .num { font-size: 11px; }
+
+
+/* 年份无记录时的提示条 */
+.year-empty-tip {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin: 10px 2px 4px; padding: 13px 16px;
+  background: var(--pink);
+  border-radius: 4px;
+  box-shadow: var(--shadow-soft);
+  transform: rotate(-.5deg);
+  font-family: var(--font-hand); font-size: 15px;
+}
+.year-empty-tip span { flex: 1; }
+.year-empty-tip button {
+  font-family: var(--font-round); font-size: 12.5px; font-weight: 700;
+  color: var(--ink);
+  background: #FFFDF8;
+  padding: 6px 12px; border-radius: 3px;
+  box-shadow: 1.5px 2px 0 rgba(42,37,32,.16);
+  flex: 0 0 auto;
+}
+.year-empty-tip button:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(42,37,32,.16); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
